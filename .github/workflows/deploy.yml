@@ -1,0 +1,66 @@
+name: Deploy Flutter Web to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build both versions
+        run: |
+          mkdir -p site
+          for v in setstate provider; do
+            cd "$GITHUB_WORKSPACE/Tree_Tracker_Source_Code/$v"
+            cp lib/main.dart /tmp/main_$v.dart
+            cp pubspec.yaml /tmp/pubspec_$v.yaml
+            flutter create . --platforms web
+            cp /tmp/main_$v.dart lib/main.dart
+            cp /tmp/pubspec_$v.yaml pubspec.yaml
+            rm -rf test
+            flutter pub get
+            flutter build web --release --base-href "/flutter-project/$v/"
+            mkdir -p "$GITHUB_WORKSPACE/site/$v"
+            cp -r build/web/. "$GITHUB_WORKSPACE/site/$v/"
+          done
+          cat > "$GITHUB_WORKSPACE/site/index.html" <<'EOF'
+          <!doctype html>
+          <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>Tree Planting Tracker</title>
+          <style>body{font-family:Arial,sans-serif;max-width:480px;margin:60px auto;padding:0 16px}
+          a{display:block;margin:12px 0;padding:14px;background:#2e7d32;color:#fff;text-decoration:none;border-radius:8px;text-align:center}</style>
+          </head><body><h1>Tree Planting Tracker</h1>
+          <a href="setstate/">Open setState version</a>
+          <a href="provider/">Open Provider version</a></body></html>
+          EOF
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
